@@ -309,45 +309,55 @@ with tab_charms:
             total["points"] += points_per_level[lvl + 1]
         return total
 
+
     def max_levels_global(current_levels_all, total_designs, total_guides, charm_categories_priority):
-        """Greedy allocation across all charms with category priority"""
+        """
+        Allocate resources across all charms to maximize points:
+        - Always upgrade the globally lowest-level charms first
+        - Tie-breaker: category priority (Infantry > Archer > Cavalry)
+        """
         final_levels = current_levels_all.copy()
         resources_left = {"designs": total_designs, "guides": total_guides}
         total_points = 0
 
-        def category_priority_index(category):
-            return charm_categories_priority.index(category)
+        def category_index(cat):
+            return charm_categories_priority.index(cat)
 
         upgrade_possible = True
         while upgrade_possible:
             upgrade_possible = False
-            best_charm = None
-            best_value = 0
-            for category in charm_categories_priority:
-                for charm in charm_categories[category]:
-                    key_name = f"{category}_{charm}"
-                    cur_level = int(final_levels[key_name])
-                    if cur_level >= 11:
-                        continue
-                    next_level = str(cur_level + 1)
-                    req = level_requirements[f"{cur_level}→{cur_level + 1}"]
-                    if resources_left["designs"] >= req["designs"] and resources_left["guides"] >= req["guides"]:
-                        total_req = req["designs"] + req["guides"]
-                        value = points_per_level[cur_level + 1] / total_req
-                        # Break ties using category priority
-                        if value > best_value or (value == best_value and best_charm and category_priority_index(category) < category_priority_index(best_charm.split("_")[0])):
-                            best_value = value
-                            best_charm = key_name
-                            best_req = req
-                            best_next_level = next_level
-            if best_charm:
-                final_levels[best_charm] = best_next_level
-                resources_left["designs"] -= best_req["designs"]
-                resources_left["guides"] -= best_req["guides"]
-                total_points += points_per_level[int(best_next_level)]
-                upgrade_possible = True
+
+            # Find the minimum level among all charms
+            min_level = min(int(final_levels[f"{cat}_{charm}"])
+                            for cat in charm_categories_priority
+                            for charm in charm_categories[cat])
+
+            # Build a list of all charms at this min_level
+            candidates = []
+            for cat in charm_categories_priority:
+                for charm in charm_categories[cat]:
+                    key_name = f"{cat}_{charm}"
+                    if int(final_levels[key_name]) == min_level and min_level < 11:
+                        candidates.append((cat, charm, key_name))
+
+            # Sort candidates by category priority
+            candidates.sort(key=lambda x: category_index(x[0]))
+
+            # Try upgrading each candidate if resources allow
+            for cat, charm, key_name in candidates:
+                cur_level = int(final_levels[key_name])
+                next_level = str(cur_level + 1)
+                req = level_requirements[f"{cur_level}→{cur_level + 1}"]
+
+                if resources_left["designs"] >= req["designs"] and resources_left["guides"] >= req["guides"]:
+                    final_levels[key_name] = next_level
+                    resources_left["designs"] -= req["designs"]
+                    resources_left["guides"] -= req["guides"]
+                    total_points += points_per_level[cur_level + 1]
+                    upgrade_possible = True
 
         return final_levels, resources_left, total_points
+
 
     # --------------------------
     # UI
